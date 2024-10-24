@@ -155,6 +155,37 @@ export async function loadTests(): Promise<TestSuiteInfo> {
 				suiteIsEmpty = false;
 			}
 		});
+		const testRegexSecond = /^function\s*(?<group_var>[a-zA-Z_]*)\.(?<test>[tT]est[a-zA-Z0-9_]*)*(?:[a-zA-Z][a-zA-Z0-9]*:)?\s*\([a-zA-Z_,.]*\)(?:.*)$/gm;
+		content.split(/\r?\n/).map(function(line: string, i: number) {
+			match = testRegexSecond.exec(line)
+			if (match && match.groups && match.groups["test"]) {
+				console.log("Found test", file.fsPath, match.groups["test"], testId.toString());
+				
+				const group_var = match.groups["group_var"];
+				const test: TestInfo = {
+					type: "test",
+					id: testId.toString(),
+					label: match.groups["test"],
+					file: file.fsPath,
+					line: i,
+					debuggable: false,
+				}
+				if (group_var) {
+					const group_name = groups[group_var].name;
+					console.log("Found group for test", file.fsPath, group_var, testId.toString());
+					test.label = group_name + '.' + test.label;
+					groups[group_var].suite.children.push(test);
+					if (!groups_suits[group_name]) {
+						groups_suits[group_name] = {};
+					}
+					groups_suits[group_name][test.label] = test;
+				} else {
+					testSuite.children.push(test);
+				}
+				testId++;
+				suiteIsEmpty = false;
+			}
+		});
 		if (!suiteIsEmpty) {
 			luaUnitSuite.children.push(testSuite);
 		} else {
