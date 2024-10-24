@@ -1,19 +1,19 @@
 {
-  "name": "vscode-luatest-adapter",
-  "displayName": "luatest Adapter",
-  "description": "Run your luatest tests in the Sidebar of Visual Studio Code",
+  "name": "vscode-tarantool-luatest-adapter",
+  "displayName": "Tarantool luatest adapter",
+  "description": "Run your Tarantool luatest tests in the Sidebar of Visual Studio Code",
   "icon": "img/icon.png",
   "author": "Viktor Sevastyanov <mivallion@gmail.com>",
   "publisher": "mivallion",
   "version": "1.0.0",
   "license": "MIT",
-  "homepage": "https://github.com/mivallion/vscode-luatest-adapter",
+  "homepage": "https://github.com/mivallion/vscode-tarantool-luatest-adapter",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mivallion/vscode-luatest-adapter.git"
+    "url": "https://github.com/mivallion/vscode-tarantool-luatest-adapter.git"
   },
   "bugs": {
-    "url": "https://github.com/mivallion/vscode-luatest-adapter/issues"
+    "url": "https://github.com/mivallion/vscode-tarantool-luatest-adapter/issues"
   },
   "categories": [
     "Other"
