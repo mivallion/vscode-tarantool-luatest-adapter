@@ -4,8 +4,8 @@ import * as settings from "./settings";
 import * as child_process from "child_process";
 import * as fs from "fs";
 import * as util from "util";
+import { JSONPlugin } from "./plugins/json";
 import { TestSuiteInfo, TestInfo, TestRunStartedEvent, TestRunFinishedEvent, TestSuiteEvent, TestEvent, TestDecoration } from "vscode-test-adapter-api";
-
 
 const luaUnitSuite: TestSuiteInfo = {
 		type: "suite",
@@ -51,6 +51,15 @@ export function lineNo(str: string, re: RegExp) {
 		}
 		return undefined;
 	}).filter(Boolean);
+}
+
+export async function loadPlugins(): Promise<void> {
+	console.log("Loading plugins");
+	const writeFile = util.promisify(fs.writeFile);
+	const luatestDir = settings.getLuatestDir();
+	console.log("Loading json output plugin into", luatestDir);
+	await writeFile(luatestDir + "/output/json.lua", JSONPlugin, { flag: "w+" });
+	console.log("Plugins were loaded successfully");
 }
 
 export async function loadTests(): Promise<TestSuiteInfo> {
@@ -200,12 +209,14 @@ export async function runTests(
 	tests: string[],
 	testStatesEmitter: vscode.EventEmitter<TestRunStartedEvent | TestRunFinishedEvent | TestSuiteEvent | TestEvent>
 ): Promise<void> {
+	var nodes = new Array<TestSuiteInfo | TestInfo>();
 	for (const suiteOrTestId of tests) {
 		const node = findNode(luaUnitSuite, suiteOrTestId);
 		if (node) {
-			await runNode(node, testStatesEmitter);
+			nodes.push(node);
 		}
 	}
+	await runTestGroups(nodes, testStatesEmitter);
 }
 
 export function findNode(searchNode: TestSuiteInfo | TestInfo, id: string): TestSuiteInfo | TestInfo | undefined {
@@ -220,59 +231,47 @@ export function findNode(searchNode: TestSuiteInfo | TestInfo, id: string): Test
 	return undefined;
 }
 
-async function runNode(
-	node: TestSuiteInfo | TestInfo,
-	testStatesEmitter: vscode.EventEmitter<TestRunStartedEvent | TestRunFinishedEvent | TestSuiteEvent | TestEvent>
-): Promise<void> {
+async function runTestGroups(
+	nodes: Array<TestSuiteInfo | TestInfo>,
+	testStatesEmitter: vscode.EventEmitter<TestRunStartedEvent | TestRunFinishedEvent | TestSuiteEvent | TestEvent>): Promise<void> {
+	const luaTestExe = settings.getLuaTestExe();
+	var nodesToRun = new Array<TestSuiteInfo | TestInfo>();
+	for (const node of nodes) {
+		nodesToRun.push(node);
+	}
 
-	if (node.type === "suite") {
+	if (nodesToRun.length == 0) {
+		return;
+	}
 
-		testStatesEmitter.fire(<TestSuiteEvent>{ type: "suite", suite: node.id, state: "running" });
-		if (groups_suits[node.label]) {
-			runTestGroup(node, testStatesEmitter);
+	var commandToRun = luaTestExe
+	for (const node of nodesToRun) {
+		let nodeSuit = node as TestSuiteInfo;
+		if (nodeSuit.children) {
+			for (const child of nodeSuit.children) {
+				testStatesEmitter.fire(<TestEvent>{ type: "test", test: child.id, state: "running" });
+			}
+			commandToRun = commandToRun  + ' ' + nodeSuit.label
 		} else {
-			for (const child of node.children) {
-				await runNode(child, testStatesEmitter);
-			}
-	
-			testStatesEmitter.fire(<TestSuiteEvent>{ type: "suite", suite: node.id, state: "completed" });
+			commandToRun = commandToRun  + ' ' + node.label
 		}
-	} else { // node.type === "test"
-
-		runTest(node, testStatesEmitter);
-
 	}
-}
-
-async function runTestGroup(
-	node: TestSuiteInfo,
-	testStatesEmitter: vscode.EventEmitter<TestRunStartedEvent | TestRunFinishedEvent | TestSuiteEvent | TestEvent>): Promise<void> {
-	
-	const luaTestExe = settings.getLuaTestExe();
-	if (!node.file) {
-		console.error("Test does not specify test file", node);
-		testStatesEmitter.fire(<TestEvent>{ type: "test", test: node.id, state: "skipped" });
+	commandToRun = commandToRun + ' -o json || exit 0'
+	const workspaceFolders = vscode.workspace.workspaceFolders;
+	if (!workspaceFolders) {
+		console.error("Failed to find test files workspaceFolders");
 		return;
 	}
-
-	const file = vscode.Uri.file(node.file);
-
-	const workspaceFolder = vscode.workspace.getWorkspaceFolder(file);
+	const workspaceFolder = workspaceFolders[0];
 	if (!workspaceFolder) {
-		console.error("Failed to find test file workspaceFolder", node.file);
-		testStatesEmitter.fire(<TestEvent>{ type: "test", test: node.id, state: "skipped" });
+		console.error("Failed to find test files workspaceFolder");
 		return;
 	}
-
-	for (const child of node.children) {
-		testStatesEmitter.fire(<TestEvent>{ type: "test", test: child.id, state: "running" });
-	}
-
-	console.log("exec: ", luaTestExe, node.label, workspaceFolder.uri.fsPath);
+	console.log("exec: ", commandToRun, workspaceFolder.uri.fsPath);
 	var stdout: string = "";
 	var stderr: string = "";
 	try {
-		stdout = child_process.execSync(luaTestExe + ' ' + node.label + ' -v || exit 0', {
+		stdout = child_process.execSync(commandToRun, {
 			cwd: workspaceFolder.uri.fsPath,
 		}).toString();
 	} catch (error) {
@@ -280,96 +279,44 @@ async function runTestGroup(
 			stderr = error.message;
 		}
 	}
-	
-	if (stderr.length > 0) {
-		console.error("Failed to execute test file", stderr);
-		testStatesEmitter.fire(<TestEvent>{ type: "test", test: node.id, state: "failed", message: stderr });
-		return;
-	}
 
-	console.log("Test stdout: ", stdout);
-
-	const groupResultRegex = /^\s*(?<test>[a-zA-Z_]*\.[a-zA-Z_]*)+\s...\s\(.*\)\s(?<result>Ok|fail)/gm;
-	let match: RegExpExecArray | null;
-	do {
-		match = groupResultRegex.exec(stdout);
-		if (!match) {
-			console.log("Tests not found");
-		}
-		if (match && match.groups && match.groups["test"] && match.groups["result"]) {
-			const passed = match.groups["result"];
-			const state = passed == "Ok" ? "passed" : "failed";
-			const test = match.groups["test"];
-			const test_node = groups_suits[node.label][test];
-			const event = <TestEvent>{ type: "test", test: test_node.id, state: state, message: stdout };
-
-			testStatesEmitter.fire(event);
-		}
-	} while (match);
-}
-
-async function runTest(
-	node: TestInfo,
-	testStatesEmitter: vscode.EventEmitter<TestRunStartedEvent | TestRunFinishedEvent | TestSuiteEvent | TestEvent>): Promise<void> {
-
-	const luaTestExe = settings.getLuaTestExe();
-	if (!node.file) {
-		console.error("Test does not specify test file", node);
-		testStatesEmitter.fire(<TestEvent>{ type: "test", test: node.id, state: "skipped" });
-		return;
-	}
-
-	const file = vscode.Uri.file(node.file);
-	const workspaceFolder = vscode.workspace.getWorkspaceFolder(file);
-	if (!workspaceFolder) {
-		console.error("Failed to find test file workspaceFolder", node.file);
-		testStatesEmitter.fire(<TestEvent>{ type: "test", test: node.id, state: "skipped" });
-		return;
-	}
-
-	testStatesEmitter.fire(<TestEvent>{ type: "test", test: node.id, state: "running" });
-
-	console.log("exec: ", luaTestExe, node.label, workspaceFolder.uri.fsPath);
-	var stdout: string = "";
-	var stderr: string = "";
+	var testResults: any;
 	try {
-		stdout = child_process.execSync(luaTestExe + ' ' + node.label + ' -v || exit 0', {
-			cwd: workspaceFolder.uri.fsPath,
-		}).toString();
+		stdout = stdout.split("\n")[1]
+		testResults = JSON.parse(stdout)
 	} catch (error) {
-		if (error instanceof Error) {
-			stderr = error.message;
-		}
-	}
-	
-	if (stderr.length > 0) {
-		console.error("Failed to execute test file", stderr);
-		testStatesEmitter.fire(<TestEvent>{ type: "test", test: node.id, state: "failed", message: stderr });
+		console.error("Failed to parse tests results")
 		return;
 	}
 
-	// const stdout = String(lua.buffer);
-	console.log("Test stdout: ", stdout);
-	const passed = stdout && stdout.length > 0 && stdout.match(/.*0 failed\s*$/);
-	const state = passed ? "passed" : "failed";
-
-	const event = <TestEvent>{ type: "test", test: node.id, state: state, message: stdout };
-
-	if (!passed) {
-		const infoRegex = settings.getDecorationRegex();
-		const match = infoRegex.exec(stdout);
-		if (match && match.groups && match.groups["line"]) {
-			const line = Number(match.groups["line"]);
-			if (Number.isSafeInteger(line)) {
-				const message = (match.groups["message"] || "").trim();
-				event.decorations = [<TestDecoration>{
-					line: line,
-					message: message,
-					hover: stdout
-				}];
+	for (const testResult of testResults["tests"]) {
+		const testName = testResult["name"];
+		const testGroup = testResult["group"];
+		const status = testResult["status"];
+		const passed = status != "ERROR" && status != "FAIL";
+		const state = passed ? "passed" : "failed";
+		const test_node = groups_suits[testGroup][testName];
+		const event = <TestEvent>{ type: "test", test: test_node.id, state: state, message: testResult["message"] };
+		if (stderr.length > 0) {
+			console.error("Failed to execute test files", stderr);
+			event.state = "failed";
+			event.message = stderr;
+		} else if (!passed) {
+			const infoRegex = settings.getDecorationRegex();
+			const match = infoRegex.exec(testResult["message"]);
+			if (match && match.groups && match.groups["line"]) {
+				const line = Number(match.groups["line"]);
+				if (Number.isSafeInteger(line)) {
+					const message = (match.groups["message"] || "").trim();
+					event.decorations = [<TestDecoration>{
+						line: line,
+						message: message,
+						hover: testResult["message"]
+					}];
+				}
 			}
 		}
-	}
 
-	testStatesEmitter.fire(event);
+		testStatesEmitter.fire(event);
+	}
 }

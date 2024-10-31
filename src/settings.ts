@@ -12,6 +12,10 @@ export function getLuaTestExe(): string {
   return substitutePath(getOrDefault("luaTestExe", ".rocks/bin/luatest"));
 }
 
+export function getLuatestDir(): string {
+  return substitutePath(getOrDefault("luatestDir", "${workspaceRoot}/.rocks/share/tarantool/luatest"));
+}
+
 export function getTestGlob(): string {
   return getOrDefault("testGlob", "**/*[tT]est*.{lua}");
 }

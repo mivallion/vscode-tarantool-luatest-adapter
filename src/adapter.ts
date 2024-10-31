@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { TestAdapter, TestLoadStartedEvent, TestLoadFinishedEvent, TestRunStartedEvent, TestRunFinishedEvent, TestSuiteEvent, TestEvent, TestSuiteInfo } from "vscode-test-adapter-api";
 import { Log } from "vscode-test-adapter-util";
 import * as settings from "./settings";
-import { loadTests, runTests, findNode } from "./tests";
+import { loadPlugins, loadTests, runTests, findNode } from "./tests";
 
 export class LuaTestAdapter implements TestAdapter {
 
@@ -31,6 +31,7 @@ export class LuaTestAdapter implements TestAdapter {
 	async load(): Promise<void> {
 		this.log.info("Loading Tarantool luatest tests");
 		this.testsEmitter.fire(<TestLoadStartedEvent>{ type: "started" });
+		await loadPlugins();
 		this.suite = await loadTests();
 		this.testsEmitter.fire(<TestLoadFinishedEvent>{ type: "finished", suite: this.suite });
 	}
