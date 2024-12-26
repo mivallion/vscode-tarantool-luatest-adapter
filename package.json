@@ -5,7 +5,7 @@
   "icon": "img/icon.png",
   "author": "Viktor Sevastyanov <mivallion@gmail.com>",
   "publisher": "mivallion",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "license": "MIT",
   "homepage": "https://github.com/mivallion/vscode-tarantool-luatest-adapter",
   "repository": {
@@ -83,12 +83,12 @@
           "scope": "resource"
         },
         "tarantoolLuatestAdapter.testGroupRegex": {
-          "description": "Regex used to find tests. Defaults to /^local (?<group_var>[a-zA-Z][a-zA-Z*_]*)\\s*=\\s*[a-zA-Z]*.group\\(['\"](?<group_name>[a-z-A-Z_]*)['\"]/gm",
+          "description": "Regex used to find tests. Defaults to /^local (?<groupVar>[a-zA-Z][a-zA-Z*_]*)\\s*=\\s*[a-zA-Z]*.group\\(['\"](?<groupName>[a-z-A-Z_]*)['\"]/gm",
           "type": "string",
           "scope": "resource"
         },
         "tarantoolLuatestAdapter.testRegex": {
-          "description": "Regex used to find tests. Defaults to /^(?<group_var>[a-zA-Z_]*)\\.(?<test>[tT]est[a-zA-Z0-9_]*)\\s*=\\s*function\\s*(?:[a-zA-Z][a-zA-Z0-9]*:)?\\s*\\([a-zA-Z_,.]*\\)(?:.*)$/gm",
+          "description": "Regex used to find tests. Defaults to /^(?<groupVar>[a-zA-Z_]*)\\.(?<test>[tT]est[a-zA-Z0-9_]*)\\s*=\\s*function\\s*(?:[a-zA-Z][a-zA-Z0-9]*:)?\\s*\\([a-zA-Z_,.]*\\)(?:.*)$/gm",
           "type": "string",
           "scope": "resource"
         },

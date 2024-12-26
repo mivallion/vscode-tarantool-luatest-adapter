@@ -23,17 +23,22 @@ export function getTestGlob(): string {
 export function getTestRegex(): RegExp {
   const text = getOrDefault("testRegex", "");
   if (text !== "") return new RegExp(text, "gm");
-  return /^(?<group_var>[a-zA-Z_]*)\.(?<test>[tT]est[a-zA-Z0-9_]*)\s*=\s*function\s*(?:[a-zA-Z][a-zA-Z0-9]*:)?\s*\([a-zA-Z_,.]*\)(?:.*)$/gm;
+  return /^(?<groupVar>[a-zA-Z][0-9a-zA-Z*_]*)\.(?<test>[tT]est[a-zA-Z0-9_]*)\s*=\s*function\s*(?:[a-zA-Z][a-zA-Z0-9]*:)?\s*\([a-zA-Z_,.]*\)(?:.*)$/gm;
 }
 
 export function getTestGroupRegex(): RegExp {
   const text = getOrDefault("testGroupRegex", "");
   if (text !== "") return new RegExp(text, "gm");
-  return /^local (?<group_var>[a-zA-Z][a-zA-Z*_]*)\s*=\s*[a-zA-Z]*.group\(['"](?<group_name>[a-z-A-Z_0-9.]*)['"]/gm;
+  return /^local (?<groupVar>[a-zA-Z][0-9a-zA-Z*_]*)\s*=\s*[a-zA-Z]*.group\(['"](?<groupName>[a-z-A-Z_0-9.]*)['"]/gm;
 }
 
 export function getTestEncoding(): "ascii" | "utf8" | "utf-8" | "utf16le" | "ucs2" | "ucs-2" | "base64" | "latin1" | "binary" | "hex" | null | undefined {
   return getOrDefault("testEncoding", "utf8") as "ascii" | "utf8" | "utf-8" | "utf16le" | "ucs2" | "ucs-2" | "base64" | "latin1" | "binary" | "hex" | null | undefined;
+}
+
+export function getDebug(): boolean {
+  let setting = getOrDefault("debug", "false");
+  return setting === "true";
 }
 
 export function getDecorationRegex(): RegExp {
