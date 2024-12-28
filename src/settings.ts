@@ -1,7 +1,11 @@
 import * as vscode from "vscode";
 
+export function getWorkspaceFolder(): string {
+  return (vscode.workspace.workspaceFolders || [])[0]?.uri?.fsPath;
+}
+
 function substitutePath(s: string): string {
-  const workspaceFolder = (vscode.workspace.workspaceFolders || [])[0]?.uri?.fsPath;
+  const workspaceFolder = getWorkspaceFolder();
   if (!workspaceFolder) return s;
   return s
     .replace(/\${workspaceRoot}/g, workspaceFolder)
@@ -20,25 +24,13 @@ export function getTestGlob(): string {
   return getOrDefault("testGlob", "**/*[tT]est*.{lua}");
 }
 
-export function getTestRegex(): RegExp {
-  const text = getOrDefault("testRegex", "");
-  if (text !== "") return new RegExp(text, "gm");
-  return /^(?<groupVar>[a-zA-Z][0-9a-zA-Z*_]*)\.(?<test>[tT]est[a-zA-Z0-9_]*)\s*=\s*function\s*(?:[a-zA-Z][a-zA-Z0-9]*:)?\s*\([a-zA-Z_,.]*\)(?:.*)$/gm;
-}
-
-export function getTestGroupRegex(): RegExp {
-  const text = getOrDefault("testGroupRegex", "");
-  if (text !== "") return new RegExp(text, "gm");
-  return /^local (?<groupVar>[a-zA-Z][0-9a-zA-Z*_]*)\s*=\s*[a-zA-Z]*.group\(['"](?<groupName>[a-z-A-Z_0-9.]*)['"]/gm;
-}
-
 export function getTestEncoding(): "ascii" | "utf8" | "utf-8" | "utf16le" | "ucs2" | "ucs-2" | "base64" | "latin1" | "binary" | "hex" | null | undefined {
   return getOrDefault("testEncoding", "utf8") as "ascii" | "utf8" | "utf-8" | "utf16le" | "ucs2" | "ucs-2" | "base64" | "latin1" | "binary" | "hex" | null | undefined;
 }
 
 export function getDebug(): boolean {
-  let setting = getOrDefault("debug", "false");
-  return setting === "true";
+  const setting = getOrDefault("debug", "true");
+  return setting === "false";
 }
 
 export function getDecorationRegex(): RegExp {

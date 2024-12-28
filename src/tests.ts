@@ -4,7 +4,7 @@ import * as settings from "./settings";
 import * as child_process from "child_process";
 import * as fs from "fs";
 import * as util from "util";
-import { JSONPlugin } from "./plugins/json";
+import { JSONPlugin, JSONList, JSONListBefore, JSONListFlag, JSONListFlagBefore, GroupFileAfter, GroupFileBefore } from "./plugins/json";
 import { TestSuiteInfo, TestInfo, TestRunStartedEvent, TestRunFinishedEvent, TestSuiteEvent, TestEvent, TestDecoration } from "vscode-test-adapter-api";
 import { error } from "console";
 
@@ -24,6 +24,10 @@ type TGroups = {
 	[dict_key: string]: TGroupInfo;
 }
 
+type TFiles = {
+	[dict_key: string]: TestSuiteInfo;
+}
+
 type TTests = {
 	[dict_key: string]: TestInfo
 }
@@ -38,7 +42,15 @@ type TLineNumberMatch = {
 	match: RegExpMatchArray | null;
 }
 
-let groupsSuits: TGroupsSuits = {};
+type TTestData = {
+	name: string;
+	group: string;
+	methodName: string;
+	line: number;
+	file: string | any;
+}
+
+const groupsSuits: TGroupsSuits = {};
 
 function debugLog(...args: any[]) {
 	if (settings.getDebug()) {
@@ -62,29 +74,53 @@ export function lineNo(str: string, re: RegExp) {
 
 export async function loadPlugins(): Promise<void> {
 	debugLog("Loading plugins");
+	const readFile = util.promisify(fs.readFile);
 	const writeFile = util.promisify(fs.writeFile);
 	const luatestDir = settings.getLuatestDir();
 	debugLog("Loading json output plugin into", luatestDir);
 	await writeFile(luatestDir + "/output/json.lua", JSONPlugin, { flag: "w+" });
+	try {
+        const data = (await readFile(luatestDir + "/runner.lua", settings.getTestEncoding())).toString();
+
+        let result = data.replace(JSONListFlagBefore, JSONListFlag);
+        result = result.replace(JSONListBefore, JSONList);
+
+        await writeFile(luatestDir + "/runner.lua", result, settings.getTestEncoding());
+
+        debugLog('runner.lua was updated successfully');
+    } catch (err) {
+        console.error(`Error: ${err}`);
+    }
+	try {
+        const data = (await readFile(luatestDir + "/group.lua", settings.getTestEncoding())).toString();
+
+        const result = data.replace(GroupFileBefore, GroupFileAfter);
+
+        await writeFile(luatestDir + "/group.lua", result, settings.getTestEncoding());
+
+        debugLog('group.lua was updated successfully');
+    } catch (err) {
+        console.error(`Error: ${err}`);
+    }
 	debugLog("Plugins were loaded successfully");
 }
 
-function listTestCases(pattern: string): Array<string> {
+function listTestCasesJSON(): Array<TTestData> {
 	const luaTestExe = settings.getLuaTestExe();
 
 	let commandToRun = luaTestExe
 
-	commandToRun = commandToRun + ' --list-test-cases -p ' + pattern + ' || exit 0'
+	commandToRun = commandToRun + ' --list-test-cases-json' + ' || exit 0'
 	const workspaceFolders = vscode.workspace.workspaceFolders;
 	if (!workspaceFolders) {
-		let err = "Failed to find test files workspaceFolders"
+		const err = "Failed to find test files workspaceFolders"
 		console.error(err);
 		error(err);
 		return [];
 	}
 	const workspaceFolder = workspaceFolders[0];
 	if (!workspaceFolder) {
-		let err = "Failed to find test files workspaceFolder";
+		const err = "Failed to find test files workspaceFolder";
 		console.error(err);
 		error(err);
 		return [];
@@ -104,14 +140,25 @@ function listTestCases(pattern: string): Array<string> {
 		}
 	}
 
-
-	const testCases = stdout.split('\n');
-	if (testCases) {
-		testCases.shift();
-		testCases.pop();
-		return testCases;
+	const i = stdout.indexOf('\n');
+	const jsonData = stdout.slice(i + 1);
+	
+	const jsonParsed = JSON.parse(jsonData);
+	const groupsData: Map<string, string> = new Map<string, string>();
+	const testsData: Array<TTestData> = [];
+	for (const groupData of jsonParsed["groups"]) {
+		groupsData.set(groupData["name"], groupData["file"])
 	}
-	return [];
+	for (const testData of jsonParsed["tests"]) {
+		testsData.push({
+			name: testData["name"],
+			group: testData["group"],
+			methodName: testData["method_name"],
+			line: testData["line"] - 1, // because lua indexing starts with 1
+			file: groupsData.get(testData["group"])?.replace("@", ""),
+		})
+	}
+	return testsData;
 }
 
 export async function loadTests(): Promise<TestSuiteInfo> {
@@ -128,180 +175,56 @@ export async function loadTests(): Promise<TestSuiteInfo> {
 		console.error("Failed to find workspaceFolders");
 		return luaUnitSuite;
 	}
-
-	const testGlob = settings.getTestGlob();
-	const files = await vscode.workspace.findFiles(testGlob);
-
-	debugLog("Found test files", testGlob, files.length);
-
-	const testRegex = settings.getTestRegex();
-	const testGroupRegex = settings.getTestGroupRegex();
-	const testEncoding = settings.getTestEncoding();
-	const readFile = util.promisify(fs.readFile);
-
+	const tests = listTestCasesJSON();
 	let testId = 1;
 	let groupId = 1;
-	for (const file of files) {
-
-		debugLog("Found test file", file.fsPath);
-
-		const workspaceFolder = vscode.workspace.getWorkspaceFolder(file);
-		if (!workspaceFolder) {
-			console.error("Failed to find workspaceFolder");
-			continue;
+	const filesSuites: TFiles = {};
+	const groups: TGroups = {};
+	for (const testData of tests) {
+		const testRelativeFilepath = path.relative(settings.getWorkspaceFolder(), testData.file);
+		const suiteId = testRelativeFilepath;
+		if (!filesSuites[suiteId]) {
+			const fileSuite: TestSuiteInfo = {
+				type: "suite",
+				id: suiteId,
+				label: suiteId,
+				children: []
+			};
+			debugLog("Found group", fileSuite);
+			filesSuites[suiteId] = fileSuite
+			luaUnitSuite.children.push(fileSuite);
 		}
-		const suiteId = path.relative(workspaceFolder.uri.fsPath, file.fsPath)
+		const testSuite: TestInfo = {
+			type: "test",
+			id: testId.toString(),
+			label: testData.name,
+			file: testData.file,
+			line: testData.line,
+			debuggable: false,
+		}
+		debugLog("Found test", testSuite);
+		try {
+			if (!groupsSuits[testData.group]) {
+				groupsSuits[testData.group] = {};
+				groupsSuits[testData.group][testSuite.label] = testSuite;
 
-		const testSuite: TestSuiteInfo = {
-			type: "suite",
-			id: suiteId,
-			label: suiteId,
-			children: []
-		};
-
-
-		const content = await readFile(file.fsPath, {
-			encoding: testEncoding
-		}) as string;
-		const groups: TGroups = {};
-		const foundGroups: Map<string, string> = new Map<string, string>();
-
-		// find all groups in file
-		let groupsMatch: RegExpExecArray | null;
-		do {
-			groupsMatch = testGroupRegex.exec(content);
-			if (!groupsMatch) {
-				debugLog("Groups not found");
+				const groupSuite: TestSuiteInfo = {
+					type: "suite",
+					id: "luatestGroup" + groupId,
+					label: testData.group,
+					children: [],
+					file: testData.file,
+				};
+				debugLog("Found group", groupSuite);
+				groups[testData.group] = { name: testData.group, suite: groupSuite };
+				filesSuites[suiteId].children.push(groupSuite);
+				groupId += 1;
 			}
-			if (groupsMatch && groupsMatch.groups && groupsMatch.groups["groupVar"] && groupsMatch.groups["groupName"]) {
-				foundGroups.set(groupsMatch.groups["groupVar"], groupsMatch.groups["groupName"]);
-				debugLog("Found group", file.fsPath, groupsMatch.groups["groupVar"], groupsMatch.groups["groupName"]);
-			}
-			groupId += 1;
-		} while (groupsMatch);
-
-		// find all tests in file
-		let suiteIsEmpty = true;
-		let match: RegExpMatchArray | null;
-		content.split(/\r?\n/).map(function (line: string, i: number) {
-			match = testRegex.exec(line)
-			if (match && match.groups && match.groups["test"]) {
-				const groupVar = match.groups["groupVar"];
-				const testName = match.groups["test"];
-				if (groupVar) {
-					const groupName = foundGroups.get(groupVar);
-					if (!groupName) {
-						error("Group not found for test", testId.toString());
-						return;
-					}
-					debugLog("Found group for test", file.fsPath, groupVar, testId.toString());
-					const testCases = listTestCases(groupName + '.*.' + testName);
-					for (const testCase of testCases) {
-						let parametrizedGroupName = testCase.replace('.' + testName, "");
-						let parameters: string = parametrizedGroupName.replace(groupName + '.', "");
-						let parametrizedGroupVar = groupVar + "$LUATESTVAR" + parameters;
-						if (parameters === groupName) {
-							parametrizedGroupVar = groupVar;
-							parameters = "";
-						}
-						const test: TestInfo = {
-							type: "test",
-							id: testId.toString(),
-							label: testCase,
-							file: file.fsPath,
-							line: i,
-							debuggable: false,
-						}
-						debugLog("Found test", file.fsPath, testCase, testId.toString());
-						debugLog(parametrizedGroupName, parametrizedGroupVar, parameters, groupsSuits, groups)
-						try {
-							if (!groupsSuits[parametrizedGroupName]) {
-								groupsSuits[parametrizedGroupName] = {};
-								groupsSuits[parametrizedGroupName][test.label] = test;
-
-								const groupSuite: TestSuiteInfo = {
-									type: "suite",
-									id: "luatestGroup" + groupId,
-									label: parametrizedGroupName,
-									children: [],
-									file: file.fsPath,
-								};
-								groups[parametrizedGroupVar] = { name: parametrizedGroupName, suite: groupSuite };
-								testSuite.children.push(groupSuite);
-								groupId += 1;
-							}
-							groups[parametrizedGroupVar].suite.children.push(test);
-							groupsSuits[parametrizedGroupName][test.label] = test;
-							testId++;
-						} catch (err) {
-							error("Error occured while adding test, skipping", testCase)
-						}
-
-					}
-				}
-				suiteIsEmpty = false;
-			}
-		});
-
-		const testRegexSecond = /^function\s*(?<groupVar>[a-zA-Z_]*)\.(?<test>[tT]est[a-zA-Z0-9_]*)*(?:[a-zA-Z][a-zA-Z0-9]*:)?\s*\([a-zA-Z_,.]*\)(?:.*)$/gm;
-		content.split(/\r?\n/).map(function (line: string, i: number) {
-			match = testRegexSecond.exec(line)
-			if (match && match.groups && match.groups["test"]) {
-				debugLog("Found test", file.fsPath, match.groups["test"], testId.toString());
-
-				const groupVar = match.groups["groupVar"];
-				const testName = match.groups["test"];
-				if (groupVar) {
-					const groupName = foundGroups.get(groupVar);
-					if (!groupName) {
-						error("Group not found for test", testId.toString());
-						return;
-					}
-					debugLog("Found group for test", file.fsPath, groupVar, testId.toString());
-					const testCases = listTestCases(groupName + '.*.' + testName);
-					for (const testCase of testCases) {
-						let parametrizedGroupName = testCase.replace('.' + testName, "");
-						let parameters: string = parametrizedGroupName.replace(groupName + '.', "");
-						let parametrizedGroupVar = groupVar + parameters;
-						if (parameters === groupName) {
-							parametrizedGroupVar = groupVar;
-							parameters = "";
-						}
-						const test: TestInfo = {
-							type: "test",
-							id: testId.toString(),
-							label: testCase,
-							file: file.fsPath,
-							line: i,
-							debuggable: false,
-						}
-						if (!groupsSuits[parametrizedGroupName]) {
-							groupsSuits[parametrizedGroupName] = {};
-							groupsSuits[parametrizedGroupName][test.label] = test;
-
-							const groupSuite: TestSuiteInfo = {
-								type: "suite",
-								id: "luatestGroup" + groupId,
-								label: parametrizedGroupName,
-								children: [],
-								file: file.fsPath,
-							};
-							groups[parametrizedGroupVar] = { name: parametrizedGroupName, suite: groupSuite };
-							testSuite.children.push(groupSuite);
-							groupId += 1;
-						}
-						groups[parametrizedGroupVar].suite.children.push(test);
-						groupsSuits[parametrizedGroupName][test.label] = test;
-						testId++;
-					}
-				}
-				suiteIsEmpty = false;
-			}
-		});
-		if (!suiteIsEmpty) {
-			luaUnitSuite.children.push(testSuite);
-		} else {
-			debugLog("Tests not found");
+			groups[testData.group].suite.children.push(testSuite);
+			groupsSuits[testData.group][testSuite.label] = testSuite;
+			testId++;
+		} catch (err) {
+			error("Error occured while adding test, skipping", testData.group, err)
 		}
 	}
 
@@ -312,7 +235,7 @@ export async function runTests(
 	tests: string[],
 	testStatesEmitter: vscode.EventEmitter<TestRunStartedEvent | TestRunFinishedEvent | TestSuiteEvent | TestEvent>
 ): Promise<void> {
-	let nodes = new Array<TestSuiteInfo | TestInfo>();
+	const nodes = new Array<TestSuiteInfo | TestInfo>();
 	for (const suiteOrTestId of tests) {
 		const node = findNode(luaUnitSuite, suiteOrTestId);
 		if (node) {
@@ -338,7 +261,7 @@ async function runTestGroups(
 	nodes: Array<TestSuiteInfo | TestInfo>,
 	testStatesEmitter: vscode.EventEmitter<TestRunStartedEvent | TestRunFinishedEvent | TestSuiteEvent | TestEvent>): Promise<void> {
 	const luaTestExe = settings.getLuaTestExe();
-	let nodesToRun = new Array<TestSuiteInfo | TestInfo>();
+	const nodesToRun = new Array<TestSuiteInfo | TestInfo>();
 	for (const node of nodes) {
 		nodesToRun.push(node);
 	}
@@ -349,7 +272,7 @@ async function runTestGroups(
 
 	let commandToRun = luaTestExe
 	for (const node of nodesToRun) {
-		let nodeSuit = node as TestSuiteInfo;
+		const nodeSuit = node as TestSuiteInfo;
 		if (nodeSuit.children) {
 			for (const child of nodeSuit.children) {
 				testStatesEmitter.fire(<TestEvent>{ type: "test", test: child.id, state: "running" });

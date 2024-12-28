@@ -7,12 +7,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	const workspaceFolder = (vscode.workspace.workspaceFolders || [])[0];
 
-	// create a simple logger that can be configured with the configuration variables
-	// `tarantoolLuatestAdapter.logpanel` and `tarantoolLuatestAdapter.logfile`
 	const log = new Log("tarantoolLuatestAdapter", workspaceFolder, "Lua Test Adapter Log");
 	context.subscriptions.push(log);
 
-	// get the Test Explorer extension
 	const testExplorerExtension = vscode.extensions.getExtension<TestHub>(testExplorerExtensionId);
 	if (log.enabled) log.info(`Test Explorer ${testExplorerExtension ? "" : "not "}found`);
 

@@ -5,7 +5,7 @@
   "icon": "img/icon.png",
   "author": "Viktor Sevastyanov <mivallion@gmail.com>",
   "publisher": "mivallion",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "license": "MIT",
   "homepage": "https://github.com/mivallion/vscode-tarantool-luatest-adapter",
   "repository": {
@@ -32,20 +32,24 @@
     "rebuild": "npm run clean && npm run build",
     "package": "vsce package",
     "publish": "vsce publish",
-    "login": "vsce login mivallion"
+    "login": "vsce login mivallion",
+    "lint": "npx eslint ."
   },
   "dependencies": {
-    "tslib": "~2.1.0",
+    "tslib": "~2.8.1",
     "vscode-test-adapter-api": "~1.9.0",
     "vscode-test-adapter-util": "~0.7.1"
   },
   "devDependencies": {
-    "@types/node": "~14.14.21",
+    "@eslint/js": "^9.17.0",
+    "@types/node": "~22.10.2",
     "@types/vscode": "~1.52.0",
+    "@vscode/vsce": "^3.2.1",
+    "eslint": "^9.17.0",
     "line-number": "^0.1.0",
-    "rimraf": "~3.0.2",
-    "typescript": "~4.1.3",
-    "vsce": "~1.83.0"
+    "rimraf": "~6.0.1",
+    "typescript": "~5.7.2",
+    "typescript-eslint": "^8.18.2"
   },
   "engines": {
     "vscode": "^1.52.0"
@@ -77,21 +81,6 @@
           "type": "string",
           "scope": "resource"
         },
-        "tarantoolLuatestAdapter.testGlob": {
-          "description": "Glob used to find test files. Defaults to '**/*[tT]est*.{lua}'",
-          "type": "string",
-          "scope": "resource"
-        },
-        "tarantoolLuatestAdapter.testGroupRegex": {
-          "description": "Regex used to find tests. Defaults to /^local (?<groupVar>[a-zA-Z][a-zA-Z*_]*)\\s*=\\s*[a-zA-Z]*.group\\(['\"](?<groupName>[a-z-A-Z_]*)['\"]/gm",
-          "type": "string",
-          "scope": "resource"
-        },
-        "tarantoolLuatestAdapter.testRegex": {
-          "description": "Regex used to find tests. Defaults to /^(?<groupVar>[a-zA-Z_]*)\\.(?<test>[tT]est[a-zA-Z0-9_]*)\\s*=\\s*function\\s*(?:[a-zA-Z][a-zA-Z0-9]*:)?\\s*\\([a-zA-Z_,.]*\\)(?:.*)$/gm",
-          "type": "string",
-          "scope": "resource"
-        },
         "tarantoolLuatestAdapter.testEncoding": {
           "description": "Test file encoding. Defaults to 'utf8'",
           "type": "string",
@@ -99,16 +88,6 @@
         },
         "tarantoolLuatestAdapter.decorationRegex": {
           "description": "Regex used to find line number and failure message. Defaults to /\\.lua:(?<line>[1-9][0-9]*):(?<message>.*)stack traceback:/",
-          "type": "string",
-          "scope": "resource"
-        },
-        "tarantoolLuatestAdapter.logpanel": {
-          "description": "Write diagnotic logs to an output panel",
-          "type": "boolean",
-          "scope": "resource"
-        },
-        "tarantoolLuatestAdapter.logfile": {
-          "description": "Write diagnostic logs to the given file",
           "type": "string",
           "scope": "resource"
         }
