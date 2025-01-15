@@ -50,6 +50,16 @@ type TTestData = {
 	file: string | any;
 }
 
+type TestInfoWithCommand = (TestSuiteInfo | TestInfo) & { command?: string };
+
+function setCommand(info: TestSuiteInfo | TestInfo, command: string) {
+	(info as TestInfoWithCommand).command = command;
+}
+
+function getCommand(info: TestSuiteInfo | TestInfo): string {
+	return (info as TestInfoWithCommand).command || "";
+}
+
 const groupsSuits: TGroupsSuits = {};
 
 function debugLog(...args: any[]) {
@@ -110,7 +120,7 @@ function listTestCasesJSON(): Array<TTestData> {
 
 	let commandToRun = luaTestExe
 
-	commandToRun = commandToRun + ' --list-test-cases-json' + ' || exit 0'
+	commandToRun = commandToRun + ' ./ --list-test-cases-json' + ' || exit 0'
 	const workspaceFolders = vscode.workspace.workspaceFolders;
 	if (!workspaceFolders) {
 		const err = "Failed to find test files workspaceFolders"
@@ -142,7 +152,7 @@ function listTestCasesJSON(): Array<TTestData> {
 
 	const i = stdout.indexOf('\n');
 	const jsonData = stdout.slice(i + 1);
-	
+
 	const jsonParsed = JSON.parse(jsonData);
 	const groupsData: Map<string, string> = new Map<string, string>();
 	const testsData: Array<TTestData> = [];
@@ -183,6 +193,7 @@ export async function loadTests(): Promise<TestSuiteInfo> {
 	for (const testData of tests) {
 		const testRelativeFilepath = path.relative(settings.getWorkspaceFolder(), testData.file);
 		const suiteId = testRelativeFilepath;
+		const commandPath = `'./${testRelativeFilepath}'`;
 		if (!filesSuites[suiteId]) {
 			const fileSuite: TestSuiteInfo = {
 				type: "suite",
@@ -190,6 +201,8 @@ export async function loadTests(): Promise<TestSuiteInfo> {
 				label: suiteId,
 				children: []
 			};
+			setCommand(fileSuite, commandPath)
+
 			debugLog("Found group", fileSuite);
 			filesSuites[suiteId] = fileSuite
 			luaUnitSuite.children.push(fileSuite);
@@ -202,6 +215,8 @@ export async function loadTests(): Promise<TestSuiteInfo> {
 			line: testData.line,
 			debuggable: false,
 		}
+		setCommand(testSuite, commandPath + ` '${testData.name}'`);
+
 		debugLog("Found test", testSuite);
 		try {
 			if (!groupsSuits[testData.group]) {
@@ -215,6 +230,8 @@ export async function loadTests(): Promise<TestSuiteInfo> {
 					children: [],
 					file: testData.file,
 				};
+				setCommand(groupSuite, commandPath + ` '${testData.group}'`);
+
 				debugLog("Found group", groupSuite);
 				groups[testData.group] = { name: testData.group, suite: groupSuite };
 				filesSuites[suiteId].children.push(groupSuite);
@@ -224,7 +241,7 @@ export async function loadTests(): Promise<TestSuiteInfo> {
 			groupsSuits[testData.group][testSuite.label] = testSuite;
 			testId++;
 		} catch (err) {
-			error("Error occured while adding test, skipping", testData.group, err)
+			error("Error occurred while adding test, skipping", testData.group, err)
 		}
 	}
 
@@ -277,10 +294,9 @@ async function runTestGroups(
 			for (const child of nodeSuit.children) {
 				testStatesEmitter.fire(<TestEvent>{ type: "test", test: child.id, state: "running" });
 			}
-			commandToRun = commandToRun + " '" + nodeSuit.label + "'"
-		} else {
-			commandToRun = commandToRun + " '" + node.label + "'"
 		}
+
+		commandToRun += " " + getCommand(node);
 	}
 	commandToRun = commandToRun + ' -o json || exit 0'
 	const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -341,6 +357,10 @@ async function runTestGroups(
 					}];
 				}
 			}
+		}
+
+		if (event.message) {
+			event.message += "\n";
 		}
 
 		testStatesEmitter.fire(event);

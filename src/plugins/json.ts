@@ -120,10 +120,10 @@ export const GroupFileAfter = `end
     -- Modified by vscode-tarantool-luatest-adapter
     self.name = name
 
-    local pattern = '.*/test/(.+)_test%.lua'
+    local pattern = '.*_test%.lua'
     local info = assert(
         find_closest_matching_frame(pattern),
-        "Can't derive test name from file name (it should match '.*/test/.*_test.lua')"
+        "Can't derive test file name (it should match '.*_test.lua')"
     )
     local test_filename = info.source
     self.file = test_filename`;
